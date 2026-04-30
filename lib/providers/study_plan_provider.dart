@@ -20,6 +20,46 @@ class StudyPlanProvider extends ChangeNotifier {
   List<StudyTask> get overdueTasks => _tasks.where((t) =>
       !t.isCompleted && t.scheduledTime.isBefore(DateTime.now())).toList();
 
+  // ── Today-specific ────────────────────────────────────────────────────────
+
+  List<StudyTask> get todaysTasks {
+    final now = DateTime.now();
+    return _tasks.where((t) =>
+        t.scheduledTime.year == now.year &&
+        t.scheduledTime.month == now.month &&
+        t.scheduledTime.day == now.day).toList();
+  }
+
+  List<StudyTask> get todaysCompleted =>
+      todaysTasks.where((t) => t.isCompleted).toList();
+
+  // ── Streak: consecutive days (back from today) with ≥1 completed task ─────
+
+  int get streakDays {
+    if (_tasks.isEmpty) return 0;
+    final completedDays = _tasks
+        .where((t) => t.isCompleted)
+        .map((t) => DateTime(
+            t.scheduledTime.year, t.scheduledTime.month, t.scheduledTime.day))
+        .toSet()
+        .toList()
+      ..sort((a, b) => b.compareTo(a)); // descending
+    if (completedDays.isEmpty) return 0;
+
+    final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    int streak = 0;
+    DateTime check = today;
+    for (final day in completedDays) {
+      if (day == check) {
+        streak++;
+        check = check.subtract(const Duration(days: 1));
+      } else if (day.isBefore(check)) {
+        break; // gap found
+      }
+    }
+    return streak;
+  }
+
   List<StudyTask> tasksForDate(DateTime date) {
     return _tasks.where((t) {
       return t.scheduledTime.year == date.year &&

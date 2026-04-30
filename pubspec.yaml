@@ -43,6 +43,7 @@ dependencies:
   google_mlkit_text_recognition: ^0.15.1
   pdfx: ^2.6.0
   path_provider: ^2.1.4
+  open_file: ^3.3.2
   http: ^1.2.2
   docx_to_text: ^1.0.1
   flutter_local_notifications: ^18.0.1

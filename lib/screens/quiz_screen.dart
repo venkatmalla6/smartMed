@@ -115,11 +115,11 @@ class _QuizScreenState extends State<QuizScreen>
   }
 
   Color _optionTextColor(String option) {
-    if (!_answered) return AppTheme.textPrimary;
+    if (!_answered) return const Color(0xFF1E293B); // dark on white bg
     if (option == _current.answer || option == _selectedOption) {
-      return Colors.white;
+      return Colors.white; // white on green/red bg
     }
-    return AppTheme.textSecondary;
+    return const Color(0xFF64748B); // muted dark for unselected answered
   }
 
   IconData? _optionIcon(String option) {
@@ -281,7 +281,7 @@ class _QuizScreenState extends State<QuizScreen>
             style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w700,
-              color: AppTheme.textPrimary,
+              color: Color(0xFF1E293B), // dark slate — visible on white card
               height: 1.4,
             ),
           ),

@@ -434,6 +434,34 @@ class _TaskCard extends StatelessWidget {
   final StudyTask task;
   const _TaskCard({required this.task});
 
+  void _confirmDelete(BuildContext context, StudyTask task) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Task'),
+        content: Text(
+            'Delete "${task.title}"?\nIts scheduled reminder will also be cancelled.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              context.read<StudyPlanProvider>().deleteTask(task);
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final timeStr = DateFormat('HH:mm').format(task.scheduledTime);
@@ -602,16 +630,30 @@ class _TaskCard extends StatelessWidget {
               ),
             ],
           ),
-          trailing: IconButton(
-            icon: Icon(
-              task.isCompleted
-                  ? Icons.undo_rounded
-                  : Icons.check_circle_outline_rounded,
-              color: task.isCompleted ? Colors.grey : Colors.green,
-            ),
-            onPressed: () =>
-                context.read<StudyPlanProvider>().toggleComplete(task),
-            tooltip: task.isCompleted ? 'Mark Incomplete' : 'Mark Complete',
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Complete / Undo button
+              IconButton(
+                icon: Icon(
+                  task.isCompleted
+                      ? Icons.undo_rounded
+                      : Icons.check_circle_outline_rounded,
+                  color: task.isCompleted ? Colors.grey : Colors.green,
+                ),
+                onPressed: () =>
+                    context.read<StudyPlanProvider>().toggleComplete(task),
+                tooltip:
+                    task.isCompleted ? 'Mark Incomplete' : 'Mark Complete',
+              ),
+              // Delete button
+              IconButton(
+                icon: const Icon(Icons.delete_outline_rounded,
+                    color: Colors.redAccent),
+                tooltip: 'Delete Task',
+                onPressed: () => _confirmDelete(context, task),
+              ),
+            ],
           ),
         ),
       ),

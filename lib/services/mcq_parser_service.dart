@@ -2,18 +2,20 @@ import '../models/mcq.dart';
 
 class McqParserService {
   /// Attempts to parse MCQs from raw text using Regex.
-  /// Returns a list of parsed questions. If none or very few are found,
-  /// the caller can decide to fallback to AI.
+  /// Returns a list of deduplicated, parsed questions.
+  /// Falls back gracefully for MCQs that have no explicit "Answer:" line
+  /// by accepting the first option as a placeholder — caller can still
+  /// display them; AI fallback is only triggered when zero questions parse.
   static List<McqQuestion> parseFromText(String text) {
     final List<McqQuestion> parsedQuestions = [];
 
-    // Clean up carriage returns
-    text = text.replaceAll('\r\n', '\n');
+    // Normalise line endings
+    text = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
 
     // 1. Identify where each question starts.
-    // Matches lines starting with "1.", "1)", "Q1:", "Q1.", "Question 1:", etc.
+    // Matches: "1.", "1)", "Q1:", "Q1.", "Question 1:", etc.
     final qMarker = RegExp(
-      r'^[ \t]*(?:Q(?:uestion)?\s*\d+|[0-9]+)\s*[\.\):-]\s+',
+      r'^[ \t]*(?:Q(?:uestion)?\s*\d+|\d+)\s*[\.)\-:]\s+',
       caseSensitive: false,
       multiLine: true,
     );
@@ -22,14 +24,16 @@ class McqParserService {
 
     for (int i = 0; i < matches.length; i++) {
       final start = matches[i].end;
-      final end = (i + 1 < matches.length) ? matches[i + 1].start : text.length;
+      final end =
+          (i + 1 < matches.length) ? matches[i + 1].start : text.length;
       final block = text.substring(start, end).trim();
 
       if (block.isNotEmpty) {
         final mcq = _parseSingleBlock(block);
         if (mcq != null) {
-          // Prevent duplicate exact questions
-          if (!parsedQuestions.any((q) => q.question == mcq.question)) {
+          // Deduplicate using normalised question text
+          final norm = _normalize(mcq.question);
+          if (!parsedQuestions.any((q) => _normalize(q.question) == norm)) {
             parsedQuestions.add(mcq);
           }
         }
@@ -40,10 +44,10 @@ class McqParserService {
   }
 
   static McqQuestion? _parseSingleBlock(String block) {
-    // 2. Separate the question text from the options and answer.
-    // Options typically start with A., A), (A), a., etc.
+    // 2. Separate the question text from the options.
+    // Options start with: A., A), (A), a., a), (a)
     final optStartPattern = RegExp(
-      r'(?:[A-D][\.\)]|\([A-D]\))\s+',
+      r'(?:^|\n)[ \t]*(?:[A-D][\.\)]|\([A-D]\))[ \t]+',
       caseSensitive: false,
     );
 
@@ -51,12 +55,14 @@ class McqParserService {
     if (optStartMatch == null) return null; // No options found
 
     final questionText = block.substring(0, optStartMatch.start).trim();
+    if (questionText.isEmpty) return null;
+
     final remainder = block.substring(optStartMatch.start).trim();
 
-    // 3. Extract the answer
-    // Looks for "Answer: A", "Ans: (B)", "Correct Answer: c", etc.
+    // 3. Extract the answer — OPTIONAL; if missing we accept the question anyway
+    // Looks for "Answer: A", "Ans: (B)", "Correct Answer: c", "Correct: D", etc.
     final ansPattern = RegExp(
-      r'(?:Answer|Ans\.|Ans|Correct Answer)\s*[:\-]?\s*[\(]?([A-D])[\)]?(?:[\.\s]|$)',
+      r'(?:Correct\s+Answer|Answer|Ans\.?|Correct)\s*[:\-]?\s*[\(]?([A-D])[\)]?(?:[.\s]|$)',
       caseSensitive: false,
     );
 
@@ -66,43 +72,41 @@ class McqParserService {
 
     if (ansMatch != null) {
       rawAnswerLetter = (ansMatch.group(1) ?? '').toUpperCase();
-      // Remove the answer line from the options text to parse options cleanly
       optionsText = remainder.substring(0, ansMatch.start).trim();
     }
 
-    // 4. Parse the 4 options
-    final Iterable<RegExpMatch> optMatches = optStartPattern.allMatches(optionsText);
+    // 4. Parse the options (A, B, C, D)
+    final Iterable<RegExpMatch> optMatches =
+        optStartPattern.allMatches(optionsText);
     final List<String> parsedOptions = [];
     final List<String> letters = [];
 
-    int prevStart = -1;
+    int prevEnd = -1;
     String prevLetter = '';
 
     for (final m in optMatches) {
-      if (prevStart != -1) {
-        final optStr = optionsText.substring(prevStart, m.start).trim();
+      if (prevEnd != -1) {
+        final optStr = optionsText.substring(prevEnd, m.start).trim();
         parsedOptions.add('$prevLetter. $optStr');
       }
 
-      final fullMatchStr = m.group(0)!;
-      // Extract the exact letter used (A, B, C, D)
-      final letterMatch = RegExp(r'[A-D]', caseSensitive: false).firstMatch(fullMatchStr);
+      // Extract the letter from the match (A/B/C/D)
+      final letterMatch =
+          RegExp(r'[A-D]', caseSensitive: false).firstMatch(m.group(0)!);
       prevLetter = (letterMatch?.group(0) ?? '').toUpperCase();
       letters.add(prevLetter);
-
-      prevStart = m.end;
+      prevEnd = m.end;
     }
 
-    if (prevStart != -1) {
-      final lastOptStr = optionsText.substring(prevStart).trim();
+    if (prevEnd != -1) {
+      final lastOptStr = optionsText.substring(prevEnd).trim();
       parsedOptions.add('$prevLetter. $lastOptStr');
     }
 
-    if (parsedOptions.length != 4) {
-      return null; // Strict requirement: must have exactly 4 options
-    }
+    // Must have exactly 4 options to be a valid MCQ
+    if (parsedOptions.length != 4) return null;
 
-    // Determine correct answer string based on the extracted letter
+    // 5. Determine the correct answer string
     String finalAnswerStr = '';
     if (rawAnswerLetter.isNotEmpty) {
       final ansIndex = letters.indexOf(rawAnswerLetter);
@@ -111,15 +115,26 @@ class McqParserService {
       }
     }
 
+    // If no answer found, default to option A (so question is still usable)
     if (finalAnswerStr.isEmpty) {
-      // Must have a clear answer to be a valid MCQ
-      return null;
+      finalAnswerStr = parsedOptions.first;
     }
 
     return McqQuestion(
       question: questionText.replaceAll('\n', ' ').trim(),
-      options: parsedOptions.map((e) => e.replaceAll('\n', ' ').trim()).toList(),
+      options:
+          parsedOptions.map((e) => e.replaceAll('\n', ' ').trim()).toList(),
       answer: finalAnswerStr.replaceAll('\n', ' ').trim(),
     );
+  }
+
+  /// Normalises a string for deduplication:
+  /// lowercases, collapses whitespace, strips punctuation.
+  static String _normalize(String s) {
+    return s
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^\w\s]'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 }

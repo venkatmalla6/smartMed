@@ -10,7 +10,6 @@ class HiveService {
   static const String quizzesBoxName = 'quizzes_box';
   static const String studyTasksBoxName = 'study_tasks_box';
   static const String settingsBoxName = 'settings_box';
-  static const String _apiKeyField = 'gemini_api_key';
 
   static Future<void> init() async {
     await Hive.initFlutter();
@@ -116,15 +115,5 @@ class HiveService {
   static Future<void> deleteStudyTask(String id) async {
     final box = getStudyTasksBox();
     await box.delete(id);
-  }
-
-  // ── Settings / API Key ─────────────────────────────────────────────────────
-
-  static Box<String> _settingsBox() => Hive.box<String>(settingsBoxName);
-
-  static String? getApiKey() => _settingsBox().get(_apiKeyField);
-
-  static Future<void> saveApiKey(String key) async {
-    await _settingsBox().put(_apiKeyField, key);
   }
 }
