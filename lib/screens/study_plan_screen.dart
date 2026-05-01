@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../models/study_task.dart';
 import '../providers/study_plan_provider.dart';
+import '../services/gemini_study_service.dart';
 
 class StudyPlanScreen extends StatefulWidget {
   const StudyPlanScreen({super.key});
@@ -281,7 +282,7 @@ class _StudyPlanScreenState extends State<StudyPlanScreen>
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
-            Tab(text: 'All Tasks'),
+            Tab(text: 'Today Tasks'),
             Tab(text: 'Upcoming'),
             Tab(text: 'Completed'),
           ],
@@ -325,12 +326,55 @@ class _StudyPlanScreenState extends State<StudyPlanScreen>
             });
           }
 
-          return TabBarView(
-            controller: _tabController,
+          return Column(
             children: [
-              _TaskList(tasks: provider.tasks),
-              _TaskList(tasks: provider.pendingTasks),
-              _TaskList(tasks: provider.completedTasks),
+              // Option C: Overarching Strategy Banner
+              if (provider.aiStrategyBanner != null)
+                Container(
+                  margin: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.deepPurple.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.deepPurple.shade200),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.stars_rounded, color: Colors.deepPurple),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Gemini Strategy',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.deepPurple,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              provider.aiStrategyBanner!,
+                              style: const TextStyle(fontSize: 13, color: Colors.black87),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _TaskList(tasks: provider.tasks),
+                    _TaskList(tasks: provider.pendingTasks),
+                    _TaskList(tasks: provider.completedTasks),
+                  ],
+                ),
+              ),
             ],
           );
         },
@@ -454,8 +498,53 @@ class _TaskCard extends StatelessWidget {
             onPressed: () {
               Navigator.pop(ctx);
               context.read<StudyPlanProvider>().deleteTask(task);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('"${task.title}" deleted'),
+                  duration: const Duration(seconds: 3),
+                  action: SnackBarAction(
+                    label: 'Undo',
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      context.read<StudyPlanProvider>().addTask(task.copyWith());
+                    },
+                  ),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
             },
             child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmComplete(BuildContext context, StudyTask task) {
+    if (task.isCompleted) {
+      context.read<StudyPlanProvider>().toggleComplete(task);
+      return;
+    }
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Complete Task'),
+        content: Text('Mark "${task.title}" as completed?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              context.read<StudyPlanProvider>().toggleComplete(task);
+            },
+            child: const Text('Complete'),
           ),
         ],
       ),
@@ -480,8 +569,46 @@ class _TaskCard extends StatelessWidget {
         ),
         child: const Icon(Icons.delete_rounded, color: Colors.white, size: 28),
       ),
-      onDismissed: (_) =>
-          context.read<StudyPlanProvider>().deleteTask(task),
+      confirmDismiss: (direction) async {
+        return await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Delete Task'),
+            content: Text('Delete "${task.title}"?\nIts scheduled reminder will also be cancelled.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+        );
+      },
+      onDismissed: (_) {
+        context.read<StudyPlanProvider>().deleteTask(task);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('"${task.title}" deleted'),
+            duration: const Duration(seconds: 3),
+            action: SnackBarAction(
+              label: 'Undo',
+              onPressed: () {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                context.read<StudyPlanProvider>().addTask(task.copyWith());
+              },
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      },
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
@@ -510,8 +637,7 @@ class _TaskCard extends StatelessWidget {
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           leading: GestureDetector(
-            onTap: () =>
-                context.read<StudyPlanProvider>().toggleComplete(task),
+            onTap: () => _confirmComplete(context, task),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               width: 36,
@@ -641,8 +767,7 @@ class _TaskCard extends StatelessWidget {
                       : Icons.check_circle_outline_rounded,
                   color: task.isCompleted ? Colors.grey : Colors.green,
                 ),
-                onPressed: () =>
-                    context.read<StudyPlanProvider>().toggleComplete(task),
+                onPressed: () => _confirmComplete(context, task),
                 tooltip:
                     task.isCompleted ? 'Mark Incomplete' : 'Mark Complete',
               ),

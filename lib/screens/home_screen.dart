@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import 'saved_notes_screen.dart';
@@ -23,6 +24,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   int _currentTab = 0;
   bool _isLoading = false;
+  DateTime? _lastPressedAt;
 
   @override
   void initState() {
@@ -103,34 +105,59 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       const StudyPlanScreen(),
       const SavedQuizzesScreen(),
     ];
-    return Scaffold(
-      backgroundColor: AppTheme.bgDeep,
-      drawer: _buildDrawer(context),
-      body: Stack(
-        children: [
-          IndexedStack(index: _currentTab, children: pages),
-          if (_isLoading)
-            Container(
-              color: Colors.black54,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.all(32),
-                  decoration: BoxDecoration(color: AppTheme.bgCard, borderRadius: BorderRadius.circular(20)),
-                  child: const Column(mainAxisSize: MainAxisSize.min, children: [
-                    CircularProgressIndicator(color: AppTheme.accentBlue),
-                    SizedBox(height: 20),
-                    Text('Extracting text...', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-                    SizedBox(height: 6),
-                    Text('Scanned PDFs may take longer', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-                  ]),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+
+        if (_currentTab != 0) {
+          setState(() => _currentTab = 0);
+          return;
+        }
+
+        final now = DateTime.now();
+        if (_lastPressedAt == null || now.difference(_lastPressedAt!) > const Duration(seconds: 2)) {
+          _lastPressedAt = now;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Press back again to exit'),
+              duration: Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        } else {
+          SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppTheme.bgDeep,
+        drawer: _buildDrawer(context),
+        body: Stack(
+          children: [
+            IndexedStack(index: _currentTab, children: pages),
+            if (_isLoading)
+              Container(
+                color: Colors.black54,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(32),
+                    decoration: BoxDecoration(color: AppTheme.bgCard, borderRadius: BorderRadius.circular(20)),
+                    child: const Column(mainAxisSize: MainAxisSize.min, children: [
+                      CircularProgressIndicator(color: AppTheme.accentBlue),
+                      SizedBox(height: 20),
+                      Text('Extracting text...', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                      SizedBox(height: 6),
+                      Text('Scanned PDFs may take longer', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                    ]),
+                  ),
                 ),
               ),
-            ),
-        ],
-      ),
-      bottomNavigationBar: _BottomNav(
-        current: _currentTab,
-        onTap: (i) => setState(() => _currentTab = i),
+          ],
+        ),
+        bottomNavigationBar: _BottomNav(
+          current: _currentTab,
+          onTap: (i) => setState(() => _currentTab = i),
+        ),
       ),
     );
   }

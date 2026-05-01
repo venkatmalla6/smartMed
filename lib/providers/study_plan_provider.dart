@@ -3,19 +3,38 @@ import '../models/study_task.dart';
 import '../services/hive_service.dart';
 import '../services/notification_service.dart';
 import '../services/study_plan_service.dart';
+import '../services/gemini_study_service.dart';
 
 class StudyPlanProvider extends ChangeNotifier {
   List<StudyTask> _tasks = [];
   bool isGenerating = false;
   String? generatingError;
+  String? aiStrategyBanner;
 
-  List<StudyTask> get tasks => _tasks;
+  List<StudyTask> get tasks {
+    final now = DateTime.now();
+    final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59);
 
-  List<StudyTask> get pendingTasks =>
-      _tasks.where((t) => !t.isCompleted).toList();
+    return _tasks.where((t) {
+      if (!t.isCompleted) {
+        return t.scheduledTime.isBefore(endOfToday) || t.scheduledTime.isAtSameMomentAs(endOfToday);
+      }
+      return t.scheduledTime.year == now.year &&
+             t.scheduledTime.month == now.month &&
+             t.scheduledTime.day == now.day;
+    }).toList();
+  }
 
-  List<StudyTask> get completedTasks =>
-      _tasks.where((t) => t.isCompleted).toList();
+  List<StudyTask> get pendingTasks {
+    final now = DateTime.now();
+    final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59);
+    return _tasks.where((t) => !t.isCompleted && t.scheduledTime.isAfter(endOfToday)).toList();
+  }
+
+  List<StudyTask> get completedTasks {
+    final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
+    return _tasks.where((t) => t.isCompleted && t.scheduledTime.isAfter(thirtyDaysAgo)).toList();
+  }
 
   List<StudyTask> get overdueTasks => _tasks.where((t) =>
       !t.isCompleted && t.scheduledTime.isBefore(DateTime.now())).toList();
@@ -70,6 +89,7 @@ class StudyPlanProvider extends ChangeNotifier {
 
   void loadTasks() {
     _tasks = HiveService.getAllStudyTasks();
+    _tasks.sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
     notifyListeners();
     // Push overdue real-time notification on every load
     NotificationService().notifyOverdueTasks(_tasks);
@@ -81,11 +101,13 @@ class StudyPlanProvider extends ChangeNotifier {
     // 1. Immediate push notification confirming the task was added
     await NotificationService().notifyTaskAdded(task);
 
-    // 2. Schedule reminder at task time
-    await NotificationService().scheduleStudyReminder(task);
+    if (!task.isCompleted && task.scheduledTime.isAfter(DateTime.now())) {
+      // 2. Schedule reminder at task time
+      await NotificationService().scheduleStudyReminder(task);
 
-    // 3. Schedule follow-up if incomplete after 1 hour
-    await NotificationService().scheduleIncompleteReminder(task);
+      // 3. Schedule follow-up if incomplete after 1 hour
+      await NotificationService().scheduleIncompleteReminder(task);
+    }
 
     loadTasks();
   }
@@ -121,6 +143,7 @@ class StudyPlanProvider extends ChangeNotifier {
   }) async {
     isGenerating = true;
     generatingError = null;
+    aiStrategyBanner = null;
     notifyListeners();
 
     try {
@@ -128,6 +151,12 @@ class StudyPlanProvider extends ChangeNotifier {
         topic: topic,
         days: days,
       );
+
+      try {
+        aiStrategyBanner = await GeminiStudyService().getStrategyForTopic(topic, days);
+      } catch (e) {
+        debugPrint('Gemini strategy error: $e');
+      }
 
       for (final suggestion in suggestions) {
         await Future.delayed(const Duration(milliseconds: 2));
