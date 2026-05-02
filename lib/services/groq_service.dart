@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:http/http.dart' as http;
 import '../models/mcq.dart';
+import '../models/flashcard.dart';
+
 
 class GroqService {
   static const String _baseUrl =
@@ -281,7 +283,81 @@ class GroqService {
     }
     return chunks;
   }
+
+  // ── Flashcard Generation ───────────────────────────────────────────────────
+
+  Future<List<Flashcard>> generateFlashcards(String text, {String? topic}) async {
+    if (text.trim().isEmpty) throw Exception('No text provided.');
+
+    final systemPrompt = 'You are a smart educational flashcard generator. '
+        'Generate high-quality flashcards from the text. '
+        'Follow the "Minimum Information Principle": each card should cover exactly ONE concept. '
+        'Keep the front (question) and back (answer) concise. '
+        'IMPORTANT: Output ONLY a JSON object with a "flashcards" key containing an array of objects.\n'
+        'Each object must have: "front" and "back" keys.';
+
+    final response = await _processWithPromptAndRetry(text, systemPrompt);
+    // Note: _processWithPromptAndRetry currently returns McqQuestions. 
+    // I should create a generic version or a specific one for flashcards.
+    // I will add a flashcard-specific method below.
+    return _generateFlashcardsInternal(text, systemPrompt, topic ?? 'Extracted');
+  }
+
+  Future<List<Flashcard>> generateTopicFlashcards(String topic) async {
+    final systemPrompt = 'You are a medical education expert. '
+        'Generate EXACTLY 15 high-yield flashcards about the topic provided. '
+        'Focus on key definitions, clinical signs, and treatments. '
+        'IMPORTANT: Output ONLY a JSON object with a "flashcards" key containing an array of objects.\n'
+        'Each object must have: "front" and "back" keys.';
+
+    return _generateFlashcardsInternal(topic, systemPrompt, topic);
+  }
+
+  Future<List<Flashcard>> _generateFlashcardsInternal(String input, String systemPrompt, String topic) async {
+    for (int attempt = 0; attempt < _maxRetries; attempt++) {
+      try {
+        final response = await http.post(
+          Uri.parse(_baseUrl),
+          headers: {
+            'Authorization': 'Bearer $_apiKey',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'model': _model,
+            'messages': [
+              {'role': 'system', 'content': systemPrompt},
+              {'role': 'user', 'content': input},
+            ],
+            'temperature': 0.7,
+            'max_tokens': 4000,
+            'response_format': {'type': 'json_object'},
+          }),
+        ).timeout(const Duration(seconds: 40));
+
+        if (response.statusCode == 200) {
+          final Map<String, dynamic> data = json.decode(response.body);
+          final content = data['choices'][0]['message']['content'];
+          final Map<String, dynamic> parsed = json.decode(content);
+          final List<dynamic> cards = parsed['flashcards'] ?? [];
+
+          return cards.map((c) => Flashcard.create(
+            front: c['front'] ?? '',
+            back: c['back'] ?? '',
+            topic: topic,
+          )).toList();
+        } else if (response.statusCode == 429) {
+          await Future.delayed(Duration(seconds: pow(2, attempt).toInt()));
+          continue;
+        }
+      } catch (e) {
+        if (attempt == _maxRetries - 1) rethrow;
+        await Future.delayed(Duration(seconds: attempt + 1));
+      }
+    }
+    return [];
+  }
 }
+
 
 /// Internal exception used to signal HTTP 429 with optional retry delay.
 class _RateLimitException implements Exception {

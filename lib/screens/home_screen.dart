@@ -8,6 +8,8 @@ import 'translator_screen.dart';
 import 'study_plan_screen.dart';
 import 'notification_centre_screen.dart';
 import 'profile_screen.dart';
+import 'flashcard_deck_screen.dart';
+
 import '../core/app_theme.dart';
 import '../providers/quiz_provider.dart';
 import '../providers/study_plan_provider.dart';
@@ -244,6 +246,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     },
                   ),
                   _buildDrawerItem(
+                    context,
+                    icon: Icons.psychology_outlined,
+                    title: 'Flashcards (SRS)',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const FlashcardDeckScreen()));
+                    },
+                  ),
+                  _buildDrawerItem(
+
                     context,
                     icon: Icons.g_translate_rounded,
                     title: 'Medical Translator',
@@ -575,11 +587,18 @@ class _QuickActionsGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final cards = [
       _ActionCardData(
-        title: 'Translate',
-        subtitle: 'Russian/Kazakh\nto English',
+        title: 'Translator',
+        subtitle: 'Medical term\ntranslator',
         icon: Icons.translate_rounded,
         gradientColors: AppTheme.gradientTranslate,
         onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TranslatorScreen())),
+      ),
+      _ActionCardData(
+        title: 'Flashcards',
+        subtitle: 'AI-Powered\nSRS Reviews',
+        icon: Icons.psychology_outlined,
+        gradientColors: const [Color(0xFF8B5CF6), Color(0xFFD946EF)], // Purple/Pink gradient
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FlashcardDeckScreen())),
       ),
       _ActionCardData(
         title: 'AI Quiz',

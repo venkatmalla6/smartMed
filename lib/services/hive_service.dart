@@ -4,12 +4,16 @@ import '../models/mcq.dart';
 import '../models/quiz_attempt.dart';
 import '../models/quiz.dart';
 import '../models/study_task.dart';
+import '../models/flashcard.dart';
+
 
 class HiveService {
   static const String notesBoxName = 'notes_box';
   static const String quizzesBoxName = 'quizzes_box';
   static const String studyTasksBoxName = 'study_tasks_box';
+  static const String flashcardsBoxName = 'flashcards_box';
   static const String settingsBoxName = 'settings_box';
+
 
   static Future<void> init() async {
     await Hive.initFlutter();
@@ -18,6 +22,8 @@ class HiveService {
     Hive.registerAdapter(QuizAttemptAdapter());
     Hive.registerAdapter(QuizAdapter());
     Hive.registerAdapter(StudyTaskAdapter());
+    Hive.registerAdapter(FlashcardAdapter());
+
 
     try {
       await Hive.openBox<Note>(notesBoxName);
@@ -41,7 +47,14 @@ class HiveService {
       await Hive.deleteBoxFromDisk(studyTasksBoxName);
       await Hive.openBox<StudyTask>(studyTasksBoxName);
     }
+    try {
+      await Hive.openBox<Flashcard>(flashcardsBoxName);
+    } catch (e) {
+      await Hive.deleteBoxFromDisk(flashcardsBoxName);
+      await Hive.openBox<Flashcard>(flashcardsBoxName);
+    }
   }
+
 
   // ── Notes ──────────────────────────────────────────────────────────────────
 
@@ -116,4 +129,31 @@ class HiveService {
     final box = getStudyTasksBox();
     await box.delete(id);
   }
+
+  // ── Flashcards ─────────────────────────────────────────────────────────────
+
+  static Box<Flashcard> getFlashcardsBox() {
+    return Hive.box<Flashcard>(flashcardsBoxName);
+  }
+
+  static Future<void> addFlashcard(Flashcard card) async {
+    final box = getFlashcardsBox();
+    await box.put(card.id, card);
+  }
+
+  static List<Flashcard> getAllFlashcards() {
+    final box = getFlashcardsBox();
+    return box.values.toList();
+  }
+
+  static Future<void> deleteFlashcard(String id) async {
+    final box = getFlashcardsBox();
+    await box.delete(id);
+  }
+
+  static Future<void> clearFlashcards() async {
+    final box = getFlashcardsBox();
+    await box.clear();
+  }
 }
+
